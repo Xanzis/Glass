@@ -1,19 +1,19 @@
 #ifndef GLASS_DEFS_H
 #define GLASS_DEFS_H
 
-// val type labels
-#define NONE 0
-#define FUNC 1
-#define NUMB 2
-#define NAME 3
-#define STNG 4
-#define CMDS 5
-
 // instance type labels
 
+enum val_type {NONE, FUNC, NUMB, NAME, STNG, CMDS};
+enum class_type {NONE, BUILTIN, USERDEF};
+
 typedef struct val val;
+typedef struct named_val named_val;
+typedef struct class class;
+typedef struct instance instance;
+typedef struct v_list v_list;
+
 struct val {
-	int type;
+	enum val_type type;
 
 	union {
 		int   numb;
@@ -23,16 +23,17 @@ struct val {
 
 		// functions are vals with command string
 		char* cmds;
+		// objects are vals with an instance pointer
+		instance* 
 	};
 };
 
-typedef struct named_val named_val;
 struct named_val {
 	char* name;
 	val   v;
 };
 
-typedef struct class class;
+
 struct class {
 	char*      name;
 	val        init_func;
@@ -42,16 +43,17 @@ struct class {
 	named_val* vars;
 };
 
-typedef struct instance instance;
 struct instance {
+	enum class_type type;
 	class*     clss;
 	named_val* vars;
 };
 
-typedef struct func_instance func_instance;
-struct func_instance {
-	named_val*     vars;
-	func_instance* child;
-};
+// data structure for the stack
+struct v_list {
+	int        last_i;
+	size_t     alloc;
+	val*       vs;
+}
 
 #endif
