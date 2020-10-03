@@ -46,12 +46,12 @@ typedef struct instance instance;
 struct instance {
 	class*     clss;
 	named_val* vars;
-}
+};
 
 typedef struct func_instance func_instance;
 struct func_instance {
-	named_val*    vars;
-	func_instance child;
-}
+	named_val*     vars;
+	func_instance* child;
+};
 
 #endif
