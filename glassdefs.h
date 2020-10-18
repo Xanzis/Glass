@@ -4,7 +4,7 @@
 // instance type labels
 
 enum val_type {NONE, FUNC, NUMB, NAME, STNG, CMDS};
-enum class_type {NONE, BUILTIN, USERDEF};
+enum class_type {NOTCLASS, BUILTIN, USERDEF};
 
 typedef struct val val;
 typedef struct named_val named_val;
@@ -23,8 +23,6 @@ struct val {
 
 		// functions are vals with command string
 		char* cmds;
-		// objects are vals with an instance pointer
-		instance* 
 	};
 };
 
@@ -54,6 +52,6 @@ struct v_list {
 	int        last_i;
 	size_t     alloc;
 	val*       vs;
-}
+};
 
 #endif
