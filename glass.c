@@ -9,6 +9,20 @@ void glass_error(char* err_text) {
 	exit(0);
 }
 
+void run_func(instance* objt_name, char* func_name, named_val* global_vars, v_list* stack) {
+	// interpret the given function of an object
+	// call nested functions as necessary
+
+	// find the function being run
+
+	char c;
+	for (int i = 0; object; ) {}
+}
+
+void interpret(class* classes) {
+	// start by finding main class M
+
+}
 
 int main(int argc, char *argv[] ) {
 	if (argc != 2) glass_error("glass takes exactly two arguments");
