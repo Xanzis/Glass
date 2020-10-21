@@ -13,6 +13,90 @@ void parse_error(char* err_text) {
 	exit(1);
 }
 
+void check_ptr(void* x);
+void check_par(char* start, char a, char b, char end);
+void read_name(char* buff, char* start, int lim);
+char* read_string(char* start);
+int read_number(char* start);
+token_t make_token(glass_env* env, char* start);
+char* end_of_token(char* start);
+char* read_clean(char* loc);
+void alloc_env(glass_env* env);
+void add_class(glass_env* env, char* name);
+void add_class_func(glass_env* env, char* c_name, char* f_name, int tok_idx);
+void init_env(glass_env* env);
+glass_env parse_file(char* filename);
+
+
+
+glass_env parse_file(char* filename) {
+	// reads in a file, returns parsed and tokenized data to the interpreter
+	// max numbers of names, classes etc. are fixed for now.
+	glass_env res;
+	// intialize the name and lookup arrays with the standard classes and functions
+	init_env(&res);
+
+	char* file = read_clean(filename);
+	char* file_pos = file;
+
+	//check for matching braces, parens, etc.
+	check_par(file_pos, '{', '}', '\0');
+	check_par(file_pos, '(', ')', '\0');
+	check_par(file_pos, '<', '>', '\0');
+	check_par(file_pos, '/', '\\', '\0');
+
+	// tokenize the program and read function starts into env
+
+	int token_idx = 0;
+	token_t cur_token;
+	char* cur_class = NULL;
+	// initialize various flags for the pass
+	int next_is_class_name = 0;
+	int next_is_func_name = 0;
+
+	while (*file_pos) {
+		// convert the current chunk to a token, add it
+		cur_token = make_token(&res, file_pos);
+		res.tokens[token_idx] = cur_token;
+		token_idx++;
+		if (token_idx >= MAX_PROGRAM) parse_error("parse_file: MAX_PROGRAM overrun");
+
+		if (next_is_class_name) {
+			next_is_class_name = 0;
+			// the current token should be a name, add the class
+			if (cur_token.type != NAME_IDX) parse_error("parse_file: { must be followed by name");
+			add_class(&res, res.names[cur_token.data]);
+			// set the current class
+			cur_class = res.names[cur_token.data];
+		}
+		else if (next_is_func_name) {
+			next_is_func_name = 0;
+			// the current token should be a name, add function to current class
+			if (cur_token.type != NAME_IDX) parse_error("parse_file: { must be followed by name");
+			if (!cur_class) parse_error("parse_file: function definition must follow class definition");
+			// fill out f_loc to point to the token after this name
+			// since token_idx has already been incremented, that's the index to use.
+			add_class_func(&res, cur_class, res.names[cur_token.data], token_idx);
+		}
+
+		if (*file_pos == '{') next_is_class_name = 1;
+		if (*file_pos == '[') next_is_func_name = 1;
+
+		// oh why not
+		// this'll throw an error later on if syntax is bad
+		if (*file_pos == '}') cur_class = NULL;
+
+		// jump to after the processed chunk
+		file_pos = end_of_token(file_pos);
+	}
+
+	// terminate with a NO_TOKEN
+	res.tokens[token_idx] = (token_t) {NO_TOKEN, 0};
+
+	free(file);
+	return res;
+}
+
 void check_ptr(void* x) {
 	if (!x) {
 		fprintf(stderr, "NULL!\n");
@@ -93,7 +177,7 @@ token_t make_token(glass_env* env, char* start) {
 				// it's a name in parens
 				// TODO add check for illegal characters?
 				read_name(name_buff, start, 64);
-				int name_idx = add_name(env->names, name_buff);
+				int name_idx = add_name(env->names, env->scopes, name_buff);
 				if (name_idx < 0) parse_error("couldn't add name in make_token");
 				res.type = NAME_IDX;
 				res.data = name_idx;
@@ -123,10 +207,15 @@ token_t make_token(glass_env* env, char* start) {
 			// single-character name
 			// add the name to the name list and set token accordingly
 			read_name(name_buff, start, 64);
-			int name_idx = add_name(env->names, name_buff);
+			int name_idx = add_name(env->names, env->scopes, name_buff);
 			if (name_idx < 0) parse_error("couldn't add name in make_token");
 			res.type = NAME_IDX;
 			res.data = name_idx;
+		}
+		else if (isdigit(*start)) {
+			// single-digit stack duplicate
+			res.type = STCK_IDX;
+			res.data = *start - '0';
 		}
 		else {
 			// generic ascii - could be command, brackets, whatever
@@ -207,6 +296,8 @@ void alloc_env(glass_env* env) {
 
 	env->names = (char**) malloc(MAX_NAMES * sizeof (char*));
 	memset(env->names, 0, MAX_NAMES * sizeof (char));
+	env->scopes = (enum scope_type*) malloc(MAX_NAMES * sizeof (enum scope_type));
+	memset(env->scopes, 0, MAX_NAMES * sizeof (enum scope_type)); // 0 is NO_SCOPE
 	env->names[0] = "~";
 	// ^this is crucial; most subroutines depend on name_idx != 0 for valid names
 	// TODO: needs fixing? Could initialize lookups with -1s but that's inconvenient
@@ -233,6 +324,11 @@ void alloc_env(glass_env* env) {
 
 	env->strings = (char**) malloc(MAX_LITERALS * sizeof (char*));
 	memset(env->strings, 0, MAX_LITERALS * sizeof (char*));
+
+	env->global_vars = (val*) malloc(MAX_LITERALS * sizeof (var));
+	for (int i = 0; i < MAX_LITERALS; i++) env->global_vars[i] = (var) {NO_VAL, 0};
+
+	//TODO would be good practice to check all these pointerss
 }
 
 void add_class(glass_env* env, char* name) {
@@ -244,7 +340,7 @@ void add_class(glass_env* env, char* name) {
 	int i = 0;
 	while (env->c_lookup[i]) i++;
 
-	env->c_lookup[i] = add_name(env->names, name);
+	env->c_lookup[i] = add_name(env->names, env->scopes, name);
 	if (env->c_lookup[i] < 0) parse_error("couldn't add class name");
 }
 
@@ -272,7 +368,7 @@ void add_class_func(glass_env* env, char* c_name, char* f_name, int tok_idx) {
 	if (empty_i >= MAX_FUNCS) parse_error("MAX_FUNCS exceeded");
 
 	// add the function name, fill out entry
-	int f_name_i = add_name(env->names, f_name);
+	int f_name_i = add_name(env->names, env->scopes, f_name);
 	if (f_name_i < 0) parse_error("could not add function name");
 	env->f_lookup[c_idx][empty_i] = f_name_i;
 	// fill out the token index
@@ -305,73 +401,6 @@ void init_env(glass_env* env) {
 			add_class_func(env, standard_names[i], stds[i][j], -1);
 		}
 	}
-}
-
-glass_env parse_file(char* filename) {
-	// reads in a file, returns parsed and tokenized data to the interpreter
-	// max numbers of names, classes etc. are fixed for now.
-	glass_env res;
-	// intialize the name and lookup arrays with the standard classes and functions
-	init_env(&res);
-
-	char* file = read_clean(filename);
-	char* file_pos = file;
-
-	//check for matching braces, parens, etc.
-	check_par(file_pos, '{', '}', '\0');
-	check_par(file_pos, '(', ')', '\0');
-	check_par(file_pos, '<', '>', '\0');
-
-	// tokenize the program and read function starts into env
-
-	int token_idx = 0;
-	token_t cur_token;
-	char* cur_class = NULL;
-	// initialize various flags for the pass
-	int next_is_class_name = 0;
-	int next_is_func_name = 0;
-
-	while (*file_pos) {
-		// convert the current chunk to a token, add it
-		cur_token = make_token(&res, file_pos);
-		res.tokens[token_idx] = cur_token;
-		token_idx++;
-		if (token_idx >= MAX_PROGRAM) parse_error("parse_file: MAX_PROGRAM overrun");
-
-		if (next_is_class_name) {
-			next_is_class_name = 0;
-			// the current token should be a name, add the class
-			if (cur_token.type != NAME_IDX) parse_error("parse_file: { must be followed by name");
-			add_class(&res, res.names[cur_token.data]);
-			// set the current class
-			cur_class = res.names[cur_token.data];
-		}
-		else if (next_is_func_name) {
-			next_is_func_name = 0;
-			// the current token should be a name, add function to current class
-			if (cur_token.type != NAME_IDX) parse_error("parse_file: { must be followed by name");
-			if (!cur_class) parse_error("parse_file: function definition must follow class definition");
-			// fill out f_loc to point to the token after this name
-			// since token_idx has already been incremented, that's the index to use.
-			add_class_func(&res, cur_class, res.names[cur_token.data], token_idx);
-		}
-
-		if (*file_pos == '{') next_is_class_name = 1;
-		if (*file_pos == '[') next_is_func_name = 1;
-
-		// oh why not
-		// this'll throw an error later on if syntax is bad
-		if (*file_pos == '}') cur_class = NULL;
-
-		// jump to after the processed chunk
-		file_pos = end_of_token(file_pos);
-	}
-
-	// terminate with a NO_TOKEN
-	res.tokens[token_idx] = (token_t) {NO_TOKEN, 0};
-
-	free(file);
-	return res;
 }
 
 #endif
