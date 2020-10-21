@@ -7,25 +7,21 @@ void runtime_error(char* error_text) {
 	exit(1);
 }
 
-// built-in classes and their functions
-
-
 // stack operations
 
-nv_list* init_stack() {
+v_list init_stack() {
 	// initialize an empty stack
-	v_list* stack = (nv_list*) malloc(sizeof (nv_list));
+	v_list stack;
 	val* vs = (val*) malloc(1000 * sizeof (val));
 	if (!stack) runtime_error("could not malloc stack in init_stack");
 	if (!vs) runtime_error("could not malloc vs in init_stack");
 	// initialize a stack with last_i -1, alloc 1000 vals, and val pointer vs
-	*stack = (nv_list) {-1, 1000 * sizeof (val), vs};
+	stack = (v_list) {-1, 1000 * sizeof (val), vs};
 	return stack;
 }
 
 void push(v_list* stack, val x) {
 	// push a value to stack, adding memory as necessary
-
 	stack->last_i++;
 
 	if ((stack->last_i * sizeof (val)) >= stack->alloc) {
