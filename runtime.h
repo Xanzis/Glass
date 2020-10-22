@@ -20,6 +20,14 @@ v_list init_stack();
 void push(v_list* stack, val x);
 val pop(v_list* stack);
 
+void execute_A_function(int func_i, v_list* stack);
+void execute_O_function(glass_env* env, int func_i, v_list* stack);
+void execute_std_function(glass_env* env, func_t func, v_list* stack);
+
+object_t* init_object(glass_env* env, int class_i, v_list* stack);
+val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n);
+int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, int t_i);
+void execute_function(glass_env* env, func_t func, v_list* stack);
 
 v_list init_stack() {
 	// initialize an empty stack
@@ -41,12 +49,12 @@ void push(v_list* stack, val x) {
 		if (!stack->vs) runtime_error("could not realloc stack memory in push");
 	}
 
-	if (v.type == STNG) {
+	if (x.type == STNG) {
 		// any string pushed to the stack gets copied and a new alloc
 		// TODO figure out when to properly free this (woo leaks) (hint: can't do it on pop())
-		char* x_copy = (char*) malloc((strlen(x.data) + 1) * sizeof (char));
-		strcpy(x_copy, x.data);
-		stack->vs[stack->last_i] = (val) {STNG, x_copy};
+		char* x_copy = (char*) malloc((strlen(x.stng) + 1) * sizeof (char));
+		strcpy(x_copy, x.stng);
+		stack->vs[stack->last_i] = (val) {STNG, .stng = x_copy};
 	}
 	else {
 		stack->vs[stack->last_i] = x;
@@ -75,13 +83,13 @@ void execute_A_function(int func_i, v_list* stack) {
 	// TODO: determine what the deal is with numbers - are they floating point? add handling
 	// std_A_funcs[] = {"a", "s", "m", "d", "mod", "f", "e", "ne", "lt", "le", "gt", "ge", NULL};
 	val x, y;
-	val y = pop(stack);
+	y = pop(stack);
 	if (func_i != 5) {
 		// floor doesn't use two operands
 		val x = pop(stack);
 	}
-	if (y.type != numb) runtime_error("arithmetic operands must be numbers");
-	if (x.type != numb) runtime_error("arithmetic operands must be numbers");
+	if (y.type != NUMB) runtime_error("arithmetic operands must be numbers");
+	if (x.type != NUMB) runtime_error("arithmetic operands must be numbers");
 
 	switch (func_i) {
 		case 0:
@@ -193,18 +201,18 @@ object_t* init_object(glass_env* env, int class_i, v_list* stack) {
 	int func_name_i = find_name(env->names, "c__");
 	if (func_name_i >= 0) {
 		// find the constructor and run it (if the class has one)
-		int f_i = get_func_idx(env, class_name_i, func_name_i);
+		int f_i = get_func_idx(*env, class_name_i, func_name_i);
 		if (f_i >= 0) execute_function(env, (func_t) {class_i, f_i, res}, stack);
 	}
 
-	return res
+	return res;
 }
 
 val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n) {
 	// given a name n, determine scope and return a pointer to the appropriate val to reference
 	if (n.type != NAME) runtime_error("get_name_target: name must be name");
 	if (env->scopes[n.name] == GLOBAL_SCOPE) return env->global_vars + n.name;
-	else if (env->scopes[n.name] == OBJECT_SCOPE) return obj_vars + n.name;
+	else if (env->scopes[n.name] == OBJECT_SCOPE) return obj_vals + n.name;
 	else if (env->scopes[n.name] == FUNCTION_SCOPE) return locals + n.name;
 	else runtime_error("bad scope on attempted = assignment");
 	return NULL;
@@ -219,7 +227,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 			push(stack, (val) {NAME, t.data});
 		break;
 		case STNG_IDX:
-			push(stack, (val) {STNG, env.strings[t.data]});
+			push(stack, (val) {STNG, .stng = env->strings[t.data]});
 		break;
 		case STCK_IDX:
 			if (stack->last_i < t.data) runtime_error("duplicate call overshoots stack");
@@ -251,7 +259,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					val c = pop(stack);
 					val n = pop(stack);
 					if ((n.type != NAME) || (c.type != NAME)) runtime_error("both ! operands must be names");
-					val new_obj = (val) {OBJT, init_object(env, find_name(env->names, c.name), stack)};
+					val new_obj = (val) {OBJT, .objt = init_object(env, get_class_idx(*env, c.name), stack)};
 					lcl_vars[n.name] = new_obj;
 				}
 				break;
@@ -265,10 +273,10 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					if (obj_var.type != OBJT) runtime_error("first . operand must be name of object variable");
 					// resolve the various mappings and push the function. TODO this is horribly clunky
 					int class_i = obj_var.objt->class_i;
-					int c_name_i = env->class_lookup[class_i];
-					int func_i = get_func_idx(env, c_name_i, f.name);
+					int c_name_i = env->c_lookup[class_i];
+					int func_i = get_func_idx(*env, c_name_i, f.name);
 					func_t new_func = (func_t) {class_i, func_i, obj};
-					push(stack, (val) {FUNC, new_func});
+					push(stack, (val) {FUNC, .func = new_func});
 				}
 				break;
 				case '?':
@@ -295,7 +303,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 				{
 					// pop a name, assign the current object to it
 					val n = pop(stack);
-					val o = (val) {OBJT, obj};
+					val o = (val) {OBJT, .objt = obj};
 					*get_name_target(env, obj->vars, lcl_vars, n) = o;
 				}
 				break;
@@ -322,17 +330,18 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 
 	if (func.class_i < 5) {
 		// the class is one of the standard classes
-		execute_std_function(env, func, stack)
+		execute_std_function(env, func, stack);
 	}
 
-	var* locals = (var*) malloc(MAX_NAMES * sizeof (var));
-	for (int i = 0; i < MAX_NAMES; i++) locals[i] = (var) {NO_VAL, 0};
+	val* locals = (val*) malloc(MAX_NAMES * sizeof (val));
+	for (int i = 0; i < MAX_NAMES; i++) locals[i] = (val) {NO_VAL, 0};
 
 	int t_i = env->f_locs[func.class_i][func.func_i];
 	token_t cur_token;
 
+	cur_token = env->tokens[t_i];
 	// main loop
-	while (!is_func_end(cur_token = env->tokens[t_i])) {
+	while (!is_func_end(cur_token)) {
 		// handle things
 		if ((cur_token.type == ASCII) && (cur_token.data == '/')) {
 			// check if this is the first encounter with this loop
@@ -348,16 +357,20 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 			// handle rest of the loop logic
 			// check the value of the following name
 			t_i++;
-			cur_token = env->tokens[t_i]
+			cur_token = env->tokens[t_i];
 			if (cur_token.type != NAME) runtime_error("/ must be followed by name");
-			val condition = *get_name_target(env, func->obj->vars, locals, (val) {NAME, cur_token.data});
+			val condition = *get_name_target(env, func.obj->vars, locals, (val) {NAME, cur_token.data});
 			if (condition.type != NUMB) runtime_error("for now, only numbers supported as loop conditions");
 			if (condition.numb) {
 				t_i++;
 			}
 			else {
 				// jump to after the loop
-				while(!is_loop_end(cur_token = env->tokens[t_i])) t_i++;
+				cur_token = env->tokens[t_i];
+				while(!is_loop_end(cur_token)) {
+					t_i++;
+					cur_token = env->tokens[t_i];
+				}
 				t_i++;
 				// shuffle loop_begins over on exit of the loop
 				for (int i = 0; loop_begins[i] && (i < (MAX_LOOP_DEPTH - 1)); i++) {
@@ -373,7 +386,7 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 
 		else {
 			// standard token
-			should_return = execute_token(env, func.obj, stack, locals, t_i);
+			int should_return = execute_token(env, func.obj, stack, locals, t_i);
 			if (should_return) {
 				free(locals);
 				return;
@@ -382,6 +395,7 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 			// just increment to next token on a standard operation
 			t_i++;
 		}
+		cur_token = env->tokens[t_i];
 	}
 	// function ends naturally
 	free(locals);

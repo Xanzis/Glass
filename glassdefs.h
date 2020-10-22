@@ -9,7 +9,7 @@
 #define MAX_FUNCS 256
 #define MAX_LITERALS 256
 #define MAX_PROGRAM 1024
-#define MAX_LOOP_DEPTH 64;
+#define MAX_LOOP_DEPTH 64
 
 #define STD_LIBS 5 // number of standard classes
 
@@ -25,7 +25,7 @@ typedef struct token_t token_t;
 // objects and functions can be on the stack, so we need structs for the relevant attributes
 // object structs have persistent state, function structs just have class and function names
 typedef struct object_t object_t;
-typedef struct func_t funct_t;
+typedef struct func_t func_t;
 
 void glassdefs_error(char* error_text);
 
@@ -38,6 +38,12 @@ int get_class_idx(glass_env env, int class_name_idx);
 int get_func_idx(glass_env env, int class_name_idx, int func_name_idx);
 
 void print_tokens(token_t* toks);
+
+struct func_t {
+	int       class_i;
+	int       func_i;
+	object_t* obj;
+};
 
 struct val {
 	enum val_type type;
@@ -81,13 +87,7 @@ struct object_t {
 	int class_i; // index of the class of which this is an instance
 	val vars[MAX_NAMES]; // object variables. For now, storage allocated for all variables
 	// TODO reduce overhead by only storing variables for names with scope=OBJECT_SCOPE
-}
-
-struct func_t {
-	int       class_i;
-	int       func_i;
-	object_t* obj;
-}
+};
 
 void glassdefs_error(char* error_text) {
 	fprintf(stderr, "Error in glassdefs.h: %s\n", error_text);
