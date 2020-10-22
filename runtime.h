@@ -5,6 +5,7 @@
 #define STACK_DEC 1500
 
 #define is_func_end(tok) ((tok.type == ASCII)&&(tok.data==']'))
+#define is_loop_end(tok) ((tok.type == ASCII)&&(tok.data=='\\'))
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -199,7 +200,15 @@ object_t* init_object(glass_env* env, int class_i, v_list* stack) {
 	return res
 }
 
-val 
+val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n) {
+	// given a name n, determine scope and return a pointer to the appropriate val to reference
+	if (n.type != NAME) runtime_error("get_name_target: name must be name");
+	if (env->scopes[n.name] == GLOBAL_SCOPE) return env->global_vars + n.name;
+	else if (env->scopes[n.name] == OBJECT_SCOPE) return obj_vars + n.name;
+	else if (env->scopes[n.name] == FUNCTION_SCOPE) return locals + n.name;
+	else runtime_error("bad scope on attempted = assignment");
+	return NULL;
+}
 
 int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, int t_i) {
 	// execute the t_i token of env. returns 1 if function should return on execution of the token
@@ -233,11 +242,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					// assign a value to a name
 					val v = pop(stack);
 					val n = pop(stack);
-					if (n.type != NAME) runtime_error("first = operand must be name");
-					if (env->scopes[n.name] == GLOBAL_SCOPE) env->global_vars[n.name] = v;
-					else if (env->scopes[n.name] == OBJECT_SCOPE) obj->vars[n.name] = v;
-					else if (env->scopes[n.name] == FUNCTION_SCOPE) lcl_vars[n.name] = v;
-					else runtime_error("bad scope on attempted = assignment");
+					*get_name_target(env, obj->vars, lcl_vars, n) = v;
 				}
 				break;
 				case '!':
@@ -256,7 +261,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					val f = pop(stack);
 					val o = pop(stack);
 					if ((o.type != NAME) || (f.type != NAME)) runtime_error("both . operands must be names");
-					var obj_var = lcl_vars[o.name];
+					val obj_var = lcl_vars[o.name];
 					if (obj_var.type != OBJT) runtime_error("first . operand must be name of object variable");
 					// resolve the various mappings and push the function. TODO this is horribly clunky
 					int class_i = obj_var.objt->class_i;
@@ -280,12 +285,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 				{
 					// pop a name, push a (scope-dependent) value
 					val n = pop(stack);
-					val res;
-					if (n.type != NAME) runtime_error("operand of * must be name");
-					if (env->scopes[n.name] == GLOBAL_SCOPE) res = env->global_vars[n.name];
-					else if (env->scopes[n.name] == OBJECT_SCOPE) res = obj->vars[n.name];
-					else if (env->scopes[n.name] == FUNCTION_SCOPE) res = lcl_vars[n.name];
-					else runtime_error("bad scope on attempted = assignment");
+					val res = *get_name_target(env, obj->vars, lcl_vars, n);
 					// check that res has an assigned value
 					if (res.type == NO_VAL) runtime_error("variable undefined in the current scope");
 					push(stack, res);
@@ -296,11 +296,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					// pop a name, assign the current object to it
 					val n = pop(stack);
 					val o = (val) {OBJT, obj};
-					if (n.type != NAME) runtime_error("operand of $ must be name");
-					if (env->scopes[n.name] == GLOBAL_SCOPE) env->global_vars[n.name] = o;
-					else if (env->scopes[n.name] == OBJECT_SCOPE) obj->vars[n.name] = o;
-					else if (env->scopes[n.name] == FUNCTION_SCOPE) lcl_vars[n.name] = o;
-					else runtime_error("bad scope on attempted = assignment");
+					*get_name_target(env, obj->vars, lcl_vars, n) = o;
 				}
 				break;
 				default:
@@ -332,14 +328,63 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 	var* locals = (var*) malloc(MAX_NAMES * sizeof (var));
 	for (int i = 0; i < MAX_NAMES; i++) locals[i] = (var) {NO_VAL, 0};
 
-	int start = env->f_locs[func.class_i][func.func_i];
+	int t_i = env->f_locs[func.class_i][func.func_i];
 	token_t cur_token;
 
-	// next line seems hard to maintain but it also fits nicely on one line
-	for (int t_i = start; !is_func_end(cur_token = env->tokens[t_i]); t_i++) {
+	// main loop
+	while (!is_func_end(cur_token = env->tokens[t_i])) {
 		// handle things
+		if ((cur_token.type == ASCII) && (cur_token.data == '/')) {
+			// check if this is the first encounter with this loop
+			// if so, update loop_begins
+			if (loop_begins[0] != t_i) {
+				// this is the first encounter of this loop begin
+				// shuffle the loop begins down
+				for (int i = MAX_LOOP_DEPTH - 1; i >= 1; i++) {
+					loop_begins[i] = loop_begins[i - 1];
+				}
+				loop_begins[0] = t_i;
+			}
+			// handle rest of the loop logic
+			// check the value of the following name
+			t_i++;
+			cur_token = env->tokens[t_i]
+			if (cur_token.type != NAME) runtime_error("/ must be followed by name");
+			val condition = *get_name_target(env, func->obj->vars, locals, (val) {NAME, cur_token.data});
+			if (condition.type != NUMB) runtime_error("for now, only numbers supported as loop conditions");
+			if (condition.numb) {
+				t_i++;
+			}
+			else {
+				// jump to after the loop
+				while(!is_loop_end(cur_token = env->tokens[t_i])) t_i++;
+				t_i++;
+				// shuffle loop_begins over on exit of the loop
+				for (int i = 0; loop_begins[i] && (i < (MAX_LOOP_DEPTH - 1)); i++) {
+					loop_begins[i] = loop_begins[i + 1];
+				}
+			}
+		}
+		else if ((cur_token.type == ASCII) && (cur_token.data == '\\')) {
+			// end of loop
+			// hop back to the first /, let the next iteration take over the rest
+			t_i = loop_begins[0];
+		}
+
+		else {
+			// standard token
+			should_return = execute_token(env, func.obj, stack, locals, t_i);
+			if (should_return) {
+				free(locals);
+				return;
+			}
+
+			// just increment to next token on a standard operation
+			t_i++;
+		}
 	}
 	// function ends naturally
+	free(locals);
 }
 
 #endif
