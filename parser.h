@@ -325,8 +325,8 @@ void alloc_env(glass_env* env) {
 	env->strings = (char**) malloc(MAX_LITERALS * sizeof (char*));
 	memset(env->strings, 0, MAX_LITERALS * sizeof (char*));
 
-	env->global_vars = (val*) malloc(MAX_LITERALS * sizeof (var));
-	for (int i = 0; i < MAX_LITERALS; i++) env->global_vars[i] = (var) {NO_VAL, 0};
+	env->global_vars = (val*) malloc(MAX_NAMES * sizeof (var));
+	for (int i = 0; i < MAX_NAMES; i++) env->global_vars[i] = (var) {NO_VAL, 0};
 
 	//TODO would be good practice to check all these pointerss
 }
