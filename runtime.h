@@ -70,9 +70,10 @@ val pop(v_list* stack) {
 	stack->last_i--;
 
 	// if there are STACK_DEC fewer vals than there is allocated space for
-	if((stack->last_i * sizeof (val)) < (stack->alloc - (STACK_DEC * sizeof (val)))) {
-		stack->alloc -= STACK_DEC * sizeof (val);
+	if((int) (stack->last_i * sizeof (val)) < (int) (stack->alloc - (STACK_DEC * sizeof (val)))) {
+		stack->alloc -= STACK_INC * sizeof (val);
 		stack->vs = realloc(stack->vs, stack->alloc);
+		if (!stack->vs) runtime_error("could not realloc stack");
 	}
 
 	return res;
@@ -333,72 +334,78 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 		execute_std_function(env, func, stack);
 	}
 
-	val* locals = (val*) malloc(MAX_NAMES * sizeof (val));
-	for (int i = 0; i < MAX_NAMES; i++) locals[i] = (val) {NO_VAL, 0};
+	else {
+		val* locals = (val*) malloc(MAX_NAMES * sizeof (val));
+		for (int i = 0; i < MAX_NAMES; i++) locals[i] = (val) {NO_VAL, 0};
 
-	int t_i = env->f_locs[func.class_i][func.func_i];
-	token_t cur_token;
+		int t_i = env->f_locs[func.class_i][func.func_i];
+		token_t cur_token;
 
-	cur_token = env->tokens[t_i];
-	// main loop
-	while (!is_func_end(cur_token)) {
-		// handle things
-		if ((cur_token.type == ASCII) && (cur_token.data == '/')) {
-			// check if this is the first encounter with this loop
-			// if so, update loop_begins
-			if (loop_begins[0] != t_i) {
-				// this is the first encounter of this loop begin
-				// shuffle the loop begins down
-				for (int i = MAX_LOOP_DEPTH - 1; i >= 1; i++) {
-					loop_begins[i] = loop_begins[i - 1];
-				}
-				loop_begins[0] = t_i;
-			}
-			// handle rest of the loop logic
-			// check the value of the following name
-			t_i++;
-			cur_token = env->tokens[t_i];
-			if (cur_token.type != NAME) runtime_error("/ must be followed by name");
-			val condition = *get_name_target(env, func.obj->vars, locals, (val) {NAME, cur_token.data});
-			if (condition.type != NUMB) runtime_error("for now, only numbers supported as loop conditions");
-			if (condition.numb) {
-				t_i++;
-			}
-			else {
-				// jump to after the loop
-				cur_token = env->tokens[t_i];
-				while(!is_loop_end(cur_token)) {
-					t_i++;
-					cur_token = env->tokens[t_i];
-				}
-				t_i++;
-				// shuffle loop_begins over on exit of the loop
-				for (int i = 0; loop_begins[i] && (i < (MAX_LOOP_DEPTH - 1)); i++) {
-					loop_begins[i] = loop_begins[i + 1];
-				}
-			}
-		}
-		else if ((cur_token.type == ASCII) && (cur_token.data == '\\')) {
-			// end of loop
-			// hop back to the first /, let the next iteration take over the rest
-			t_i = loop_begins[0];
-		}
+		//print_tokens(env->tokens + t_i);
 
-		else {
-			// standard token
-			int should_return = execute_token(env, func.obj, stack, locals, t_i);
-			if (should_return) {
-				free(locals);
-				return;
-			}
-
-			// just increment to next token on a standard operation
-			t_i++;
-		}
 		cur_token = env->tokens[t_i];
+		// main loop
+		while (!is_func_end(cur_token)) {
+			// handle things
+			if ((cur_token.type == ASCII) && (cur_token.data == '/')) {
+				// check if this is the first encounter with this loop
+				// if so, update loop_begins
+				if (loop_begins[0] != t_i) {
+					// this is the first encounter of this loop begin
+					// shuffle the loop begins down
+					for (int i = MAX_LOOP_DEPTH - 1; i >= 1; i++) {
+						loop_begins[i] = loop_begins[i - 1];
+					}
+					loop_begins[0] = t_i;
+				}
+				// handle rest of the loop logic
+				// check the value of the following name
+				t_i++;
+				cur_token = env->tokens[t_i];
+				if (cur_token.type != NAME) runtime_error("/ must be followed by name");
+				val condition = *get_name_target(env, func.obj->vars, locals, (val) {NAME, cur_token.data});
+				if (condition.type != NUMB) runtime_error("for now, only numbers supported as loop conditions");
+				if (condition.numb) {
+					t_i++;
+				}
+				else {
+					// jump to after the loop
+					cur_token = env->tokens[t_i];
+					while(!is_loop_end(cur_token)) {
+						t_i++;
+						cur_token = env->tokens[t_i];
+					}
+					t_i++;
+					// shuffle loop_begins over on exit of the loop
+					for (int i = 0; loop_begins[i] && (i < (MAX_LOOP_DEPTH - 1)); i++) {
+						loop_begins[i] = loop_begins[i + 1];
+					}
+				}
+			}
+
+			else if ((cur_token.type == ASCII) && (cur_token.data == '\\')) {
+				// end of loop
+				// hop back to the first /, let the next iteration take over the rest
+				t_i = loop_begins[0];
+			}
+
+			else {
+				// standard token
+				//print_tok(cur_token);
+				int should_return = execute_token(env, func.obj, stack, locals, t_i);
+				if (should_return) {
+					free(locals);
+					return;
+				}
+
+				// just increment to next token on a standard operation
+				t_i++;
+			}
+			cur_token = env->tokens[t_i];
+		}
+		// function ends naturally
+		free(locals);
 	}
-	// function ends naturally
-	free(locals);
 }
 
 #endif

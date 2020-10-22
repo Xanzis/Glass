@@ -182,33 +182,37 @@ int get_func_idx(glass_env env, int class_name_idx, int func_name_idx) {
 	return res;
 }
 
+void print_tok(token_t t) {
+	if (t.type == ASCII) {
+		putchar(t.data);
+	}
+	else {
+		printf("\033[0;31m");
+		switch (t.type) {
+			case NAME_IDX:
+				putchar('N');
+			break;
+			case NUMBER:
+				putchar('#');
+			break;
+			case STNG_IDX:
+				putchar('A');
+			break;
+			case STCK_IDX:
+				putchar('T');
+			break;
+			default:
+			putchar('?');
+		}
+		printf("\033[0m");
+	}
+}
+
 void print_tokens(token_t* t) {
 	// print a NO_TOKEN terminated array of tokens
 	int i = 0;
 	while(t[i].type != NO_TOKEN && i < MAX_PROGRAM) {
-		if (t[i].type == ASCII) {
-			putchar(t[i].data);
-		}
-		else {
-			printf("\033[0;31m");
-			switch (t[i].type) {
-				case NAME_IDX:
-					putchar('N');
-				break;
-				case NUMBER:
-					putchar('#');
-				break;
-				case STNG_IDX:
-					putchar('A');
-				break;
-				case STCK_IDX:
-					putchar('T');
-				break;
-				default:
-				putchar('?');
-			}
-			printf("\033[0m");
-		}
+		print_tok(t[i]);
 		i++;
 	}
 	putchar('\n');
