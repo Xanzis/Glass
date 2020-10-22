@@ -2,29 +2,37 @@
 #define GLASS_DEFS_H
 
 #include <string.h>
+#include <ctype.h>
 
 #define MAX_NAMES 256
 #define MAX_CLASSES 256
 #define MAX_FUNCS 256
 #define MAX_LITERALS 256
 #define MAX_PROGRAM 1024
+#define MAX_LOOP_DEPTH 64;
 
 #define STD_LIBS 5 // number of standard classes
 
-enum val_type {NONE, FUNC, NUMB, NAME, STNG, CMDS};
+enum val_type {NO_VAL, FUNC, OBJT, NUMB, NAME, STNG, CMDS};
 enum token_type {NO_TOKEN, ASCII, NAME_IDX, NUMBER, STNG_IDX, STCK_IDX};
+enum scope_type {NO_SCOPE=0, GLOBAL_SCOPE, OBJECT_SCOPE, FUNCTION_SCOPE};
 
 typedef struct val val;
 typedef struct v_list v_list;
 typedef struct glass_env glass_env;
 typedef struct token_t token_t;
 
+// objects and functions can be on the stack, so we need structs for the relevant attributes
+// object structs have persistent state, function structs just have class and function names
+typedef struct object_t object_t;
+typedef struct func_t funct_t;
+
 void glassdefs_error(char* error_text);
 
 void free_env(glass_env env);
 
 int find_name(char** all_n, char* n);
-int add_name(char** all_n, char* n);
+int add_name(char** all_n, enum scope_type* scopes, char* n);
 
 int get_class_idx(glass_env env, int class_name_idx);
 int get_func_idx(glass_env env, int class_name_idx, int func_name_idx);
@@ -35,13 +43,11 @@ struct val {
 	enum val_type type;
 
 	union {
-		int   numb;
-		val*  func;
-		char* name;
-		char* stng;
-
-		// functions are vals with command string
-		char* cmds;
+		int       numb;
+		int       name;
+		char*     stng;
+		object_t* objt;
+		func_t    func;
 	};
 };
 
@@ -60,14 +66,28 @@ struct token_t {
 };
 
 struct glass_env {
-	char** names;    // all names defined in the program (for debug purposes)
-	int* c_lookup;   // c_lookup[i] = n means the ith class has name n (in the name array)
-	int** f_lookup;  // f_lookup[c][i] = n means the number ith function of the cth class has name n
-	int**  f_locs;   // f_locs[c][f] is index of first token of the fth function of cth class (after name)
-	token_t* tokens; // array of tokens forming the program. 
+	char**   names;     // all names defined in the program (for debug purposes)
+	enum scope_type* scopes; // each name has a scope (depends on first letter of name)
+	int*     c_lookup;    // c_lookup[i] = n means the ith class has name n (in the name array)
+	int**    f_lookup;   // f_lookup[c][i] = n means the number ith function of the cth class has name n
+	int**    f_locs;    // f_locs[c][f] is index of first token of the fth function of cth class (after name)
+	token_t* tokens;  // array of tokens forming the program. 
 
-	char** strings;  // array of all string literals used in program
+	char** strings;   // array of all string literals used in program
+	val* global_vars; // for use during runtime
 };
+
+struct object_t {
+	int class_i; // index of the class of which this is an instance
+	val vars[MAX_NAMES]; // object variables. For now, storage allocated for all variables
+	// TODO reduce overhead by only storing variables for names with scope=OBJECT_SCOPE
+}
+
+struct func_t {
+	int       class_i;
+	int       func_i;
+	object_t* obj;
+}
 
 void glassdefs_error(char* error_text) {
 	fprintf(stderr, "Error in glassdefs.h: %s\n", error_text);
@@ -95,6 +115,16 @@ void free_env(glass_env env) {
 	
 	for (int i = 0; env.strings[i] && i < MAX_LITERALS; i++) free(env.strings[i]);
 	free(env.strings);
+	
+	free(env.global_vars);
+}
+
+enum scope_type name_scope(char* n) {
+	if (isupper(*n)) return GLOBAL_SCOPE;
+	if (islower(*n)) return OBJECT_SCOPE;
+	if (*n == '_') return FUNCTION_SCOPE;
+	glassdefs_error("name_scope: bad name");
+	return NO_SCOPE;
 }
 
 int find_name(char** all_n, char* n) {
@@ -106,7 +136,7 @@ int find_name(char** all_n, char* n) {
 	return -1;
 }
 
-int add_name(char** all_n, char* n) {
+int add_name(char** all_n, enum scope_type* scopes, char* n) {
 	// adds the name to the end of all_n, returns the place it was added
 	// checks if name is already there, if so returns existing location
 	// allocates new memory for the name, sets all_n[i] pointer
@@ -118,6 +148,7 @@ int add_name(char** all_n, char* n) {
 		if (!all_n[i]) {
 			// allocate space for the new name and 
 			all_n[i] = (char*) malloc((strlen(n) * sizeof (char)) + 1);
+			scopes[i] = name_scope(n);
 			strcpy(all_n[i], n);
 			return i;
 		}
