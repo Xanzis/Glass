@@ -1,0 +1,8 @@
+'test persistence of object variables'
+'the T class initializes with x=2'
+'T.a adds 2 to it'
+'T.b puts x on the stack'
+'M.m runs these three functions and prints the resulting number, which should be 4'
+{T[(c__)x<2>=][a(_a)A!xx*<2>(_a)a.?=][bx*]}
+'hi'
+{M[m(_T)T!(_T)a.?(_T)b.?(_o)O!(_o)(on).?]}
