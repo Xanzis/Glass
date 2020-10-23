@@ -282,8 +282,10 @@ char* read_clean(char* loc) {
 		// read the following lines if you DARE
 		if (!in_comment && (c == '"')) in_string = !in_string;
 		if (!in_string && (c == '\'') && !in_comment) in_comment = 1;
-		if (!in_comment && !isspace(c)) res[res_i++] = c;
-		if (!in_string && (c == '\'') && in_comment) in_comment = 0;
+		else {
+			if (!in_comment && !isspace(c)) res[res_i++] = c;
+			if (!in_string && (c == '\'') && in_comment) in_comment = 0;
+		}
 	}
 
 	free(buff);
