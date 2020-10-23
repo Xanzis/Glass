@@ -13,7 +13,7 @@
 
 #define STD_LIBS 5 // number of standard classes
 
-enum val_type {NO_VAL, FUNC, OBJT, NUMB, NAME, STNG, CMDS};
+enum val_type {NO_VAL=0, FUNC, OBJT, NUMB, NAME, STNG, CMDS};
 enum token_type {NO_TOKEN, ASCII, NAME_IDX, NUMBER, STNG_IDX, STCK_IDX};
 enum scope_type {NO_SCOPE=0, GLOBAL_SCOPE, OBJECT_SCOPE, FUNCTION_SCOPE};
 
@@ -216,6 +216,24 @@ void print_tokens(token_t* t) {
 		i++;
 	}
 	putchar('\n');
+}
+
+void print_val(val v) {
+	char* type_names[] = {"NO_VAL", "FUNC", "OBJT", "NUMB", "NAME", "STNG", "CMDS"};
+	printf("type-%s-val-", type_names[v.type]);
+	if ((v.type == NUMB) || (v.type == NAME)) {
+		printf("%d\n", v.numb);
+	}
+	else if (v.type == STNG) {
+		printf("%s\n", v.stng);
+	}
+	else if (v.type == FUNC) {
+		printf("%d-%d\n", v.func.class_i, v.func.func_i);
+	}
+	else if (v.type == OBJT) {
+		printf("%p\n", (void *) v.objt);
+	}
+	else printf("none\n");
 }
 
 #endif
