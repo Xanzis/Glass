@@ -79,6 +79,27 @@ val pop(v_list* stack) {
 	return res;
 }
 
+void print_stack(v_list* stack) {
+	printf("stack:\n");
+	for (int i = stack->last_i; i >= 0; i--) {
+		print_val(stack->vs[i]);
+	}
+	printf("end stack\n");
+}
+
+void print_func(glass_env* env, func_t f) {
+	printf("function c:%s f:%s, obj c:%s\n", 
+		env->names[env->c_lookup[f.class_i]],
+		env->names[env->f_lookup[f.class_i][f.func_i]],
+		env->names[env->c_lookup[f.obj->class_i]]);
+}
+
+void print_loc(glass_env* env, int t_i) {
+	print_tokens(env->tokens);
+	for (int i = 0; i < t_i; i++) printf(" ");
+	printf("|\n");
+}
+
 void execute_A_function(int func_i, v_list* stack) {
 	// execute a function of class A, with func_i indexing into the canonical function ordering
 	// TODO: determine what the deal is with numbers - are they floating point? add handling
@@ -87,10 +108,10 @@ void execute_A_function(int func_i, v_list* stack) {
 	y = pop(stack);
 	if (func_i != 5) {
 		// floor doesn't use two operands
-		val x = pop(stack);
+		x = pop(stack);
+		if (x.type != NUMB) runtime_error("arithmetic operands must be numbers");
 	}
 	if (y.type != NUMB) runtime_error("arithmetic operands must be numbers");
-	if (x.type != NUMB) runtime_error("arithmetic operands must be numbers");
 
 	switch (func_i) {
 		case 0:
@@ -203,7 +224,10 @@ object_t* init_object(glass_env* env, int class_i, v_list* stack) {
 	if (func_name_i >= 0) {
 		// find the constructor and run it (if the class has one)
 		int f_i = get_func_idx(*env, class_name_i, func_name_i);
-		if (f_i >= 0) execute_function(env, (func_t) {class_i, f_i, res}, stack);
+		if (f_i >= 0) {
+			printf("running constructor\n");
+			execute_function(env, (func_t) {class_i, f_i, res}, stack);
+		}
 	}
 
 	return res;
@@ -270,21 +294,25 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					val f = pop(stack);
 					val o = pop(stack);
 					if ((o.type != NAME) || (f.type != NAME)) runtime_error("both . operands must be names");
-					val obj_var = lcl_vars[o.name];
+					val obj_var = *get_name_target(env, obj->vars, lcl_vars, o);
 					if (obj_var.type != OBJT) runtime_error("first . operand must be name of object variable");
 					// resolve the various mappings and push the function. TODO this is horribly clunky
 					int class_i = obj_var.objt->class_i;
 					int c_name_i = env->c_lookup[class_i];
 					int func_i = get_func_idx(*env, c_name_i, f.name);
-					func_t new_func = (func_t) {class_i, func_i, obj};
+					func_t new_func = (func_t) {class_i, func_i, obj_var.objt};
 					push(stack, (val) {FUNC, .func = new_func});
 				}
 				break;
 				case '?':
 				{
 					// pop a function and run it
+					printf("running a new function!\n");
+					print_loc(env, t_i);
 					val f = pop(stack);
 					if (f.type != FUNC) runtime_error("operand of ? must be a function");
+					print_func(env, f.func);
+					print_stack(stack);
 					func_t func = f.func;
 					// down the rabbit hole we go
 					execute_function(env, func, stack);
