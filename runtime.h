@@ -11,14 +11,16 @@
 #include <stdlib.h>
 #include "glassdefs.h"
 
-void runtime_error(char* error_text) {
-	fprintf(stderr, "runtime error:\n%s\n", error_text);
-	exit(1);
-}
+void runtime_error(char* error_text);
+void runtime_error_verbose(glass_env* env, v_list* stack, int t_i, char* error_text);
 
 v_list init_stack();
 void push(v_list* stack, val x);
 val pop(v_list* stack);
+
+void print_stack(v_list* stack);
+void print_func(glass_env* env, func_t f);
+void print_loc(glass_env* env, int t_i);
 
 void execute_A_function(int func_i, v_list* stack);
 void execute_O_function(glass_env* env, int func_i, v_list* stack);
@@ -28,6 +30,19 @@ object_t* init_object(glass_env* env, int class_i, v_list* stack);
 val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n);
 int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, int t_i);
 void execute_function(glass_env* env, func_t func, v_list* stack);
+
+void runtime_error(char* error_text) {
+	fprintf(stderr, "runtime error:\n%s\n", error_text);
+	exit(1);
+}
+
+void runtime_error_verbose(glass_env* env, v_list* stack, int t_i, char* error_text) {
+	printf("runtime error:\n%s\n", error_text);
+	printf("state info follows:\n");
+	print_loc(env, t_i);
+	print_stack(stack);
+	exit(1);
+}
 
 v_list init_stack() {
 	// initialize an empty stack
@@ -225,7 +240,9 @@ object_t* init_object(glass_env* env, int class_i, v_list* stack) {
 		// find the constructor and run it (if the class has one)
 		int f_i = get_func_idx(*env, class_name_i, func_name_i);
 		if (f_i >= 0) {
+#ifdef DEBUG
 			printf("running constructor\n");
+#endif
 			execute_function(env, (func_t) {class_i, f_i, res}, stack);
 		}
 	}
@@ -235,12 +252,40 @@ object_t* init_object(glass_env* env, int class_i, v_list* stack) {
 
 val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n) {
 	// given a name n, determine scope and return a pointer to the appropriate val to reference
+	// TODO: this fails when looking up an object name? 
+#ifdef DEBUG
+	printf("get_name_target request: %s scope ", env->names[n.name]);
+#endif
 	if (n.type != NAME) runtime_error("get_name_target: name must be name");
-	if (env->scopes[n.name] == GLOBAL_SCOPE) return env->global_vars + n.name;
-	else if (env->scopes[n.name] == OBJECT_SCOPE) return obj_vals + n.name;
-	else if (env->scopes[n.name] == FUNCTION_SCOPE) return locals + n.name;
-	else runtime_error("bad scope on attempted = assignment");
-	return NULL;
+	val* res;
+	switch (env->scopes[n.name]) {
+		case GLOBAL_SCOPE:
+#ifdef DEBUG
+		printf("GLOBAL_SCOPE\n");
+#endif
+		res = env->global_vars + n.name;
+		break;
+		case OBJECT_SCOPE:
+#ifdef DEBUG
+		printf("OBJECT_SCOPE\n");
+#endif
+		res = obj_vals + n.name;
+		break;
+		case FUNCTION_SCOPE:
+#ifdef DEBUG
+		printf("FUNCTION_SCOPE\n");
+#endif
+		res = locals + n.name;
+		break;
+		default:
+		runtime_error("bad scope on attempted = assignment");
+		return NULL;
+	}
+#ifdef DEBUG
+	val ref = *res;
+	if (ref.type == NO_VAL) printf("warning: no_val referenced (fine as assignment target)\n");
+#endif
+	return res;
 }
 
 int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, int t_i) {
@@ -285,7 +330,7 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					val n = pop(stack);
 					if ((n.type != NAME) || (c.type != NAME)) runtime_error("both ! operands must be names");
 					val new_obj = (val) {OBJT, .objt = init_object(env, get_class_idx(*env, c.name), stack)};
-					lcl_vars[n.name] = new_obj;
+					*get_name_target(env, obj->vars, lcl_vars, n) = new_obj;
 				}
 				break;
 				case '.':
@@ -295,7 +340,11 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					val o = pop(stack);
 					if ((o.type != NAME) || (f.type != NAME)) runtime_error("both . operands must be names");
 					val obj_var = *get_name_target(env, obj->vars, lcl_vars, o);
-					if (obj_var.type != OBJT) runtime_error("first . operand must be name of object variable");
+					if (obj_var.type != OBJT) {
+						print_val(o);
+						print_val(obj_var);
+						runtime_error_verbose(env, stack, t_i, "first . operand must be name of object variable");
+					}
 					// resolve the various mappings and push the function. TODO this is horribly clunky
 					int class_i = obj_var.objt->class_i;
 					int c_name_i = env->c_lookup[class_i];
@@ -307,12 +356,14 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 				case '?':
 				{
 					// pop a function and run it
-					printf("running a new function!\n");
-					print_loc(env, t_i);
 					val f = pop(stack);
 					if (f.type != FUNC) runtime_error("operand of ? must be a function");
+#ifdef DEBUG
+					printf("running a new function!\n");
+					print_loc(env, t_i);
 					print_func(env, f.func);
 					print_stack(stack);
+#endif
 					func_t func = f.func;
 					// down the rabbit hole we go
 					execute_function(env, func, stack);
@@ -381,7 +432,7 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 				if (loop_begins[0] != t_i) {
 					// this is the first encounter of this loop begin
 					// shuffle the loop begins down
-					for (int i = MAX_LOOP_DEPTH - 1; i >= 1; i++) {
+					for (int i = MAX_LOOP_DEPTH - 1; i >= 1; i--) {
 						loop_begins[i] = loop_begins[i - 1];
 					}
 					loop_begins[0] = t_i;
@@ -390,7 +441,7 @@ void execute_function(glass_env* env, func_t func, v_list* stack) {
 				// check the value of the following name
 				t_i++;
 				cur_token = env->tokens[t_i];
-				if (cur_token.type != NAME) runtime_error("/ must be followed by name");
+				if (cur_token.type != NAME_IDX) runtime_error("/ must be followed by name");
 				val condition = *get_name_target(env, func.obj->vars, locals, (val) {NAME, cur_token.data});
 				if (condition.type != NUMB) runtime_error("for now, only numbers supported as loop conditions");
 				if (condition.numb) {
