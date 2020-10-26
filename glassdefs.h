@@ -146,7 +146,7 @@ int add_name(char** all_n, enum scope_type* scopes, char* n) {
 	int i = 0;
 	do {
 		if (!all_n[i]) {
-			// allocate space for the new name and 
+			// allocate space for the new name
 			all_n[i] = (char*) malloc((strlen(n) * sizeof (char)) + 1);
 			scopes[i] = name_scope(n);
 			strcpy(all_n[i], n);

@@ -1,5 +1,3 @@
-#define VERBOSE
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -32,12 +30,6 @@ int main(int argc, char *argv[] ) {
 	glass_env env = parse_file(argv[1]);
 	
 	int main_idx = get_class_idx(env, find_name(env.names, "M"));
-	//printf("Class M is stored as class #%d\n", main_idx);
-	//printf("Class M has the following functions:\n");
-	//for (int i = 0; env.f_lookup[main_idx][i] >= 0; i++) {
-	//	printf("%s ", env.names[env.f_lookup[main_idx][i]]);
-	//}
-	//printf("\n");
 
 	printf("Program tokens:\n");
 	print_tokens(env.tokens);

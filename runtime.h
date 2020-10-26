@@ -282,6 +282,9 @@ val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n) {
 int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, int t_i) {
 	// execute the t_i token of env. returns 1 if function should return on execution of the token
 	// do not pass / tokens - these should be handled in execute_function
+#ifdef DEBUG
+	print_loc(env, t_i);
+#endif
 	token_t t = env->tokens[t_i];
 	switch (t.type) {
 		case NAME_IDX:
@@ -315,7 +318,6 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 #ifdef DEBUG
 					printf("assigning to %s: ", env->names[n.name]);
 					print_val(n);
-					print_loc(env, t_i);
 					print_stack(stack);
 #endif
 					*get_name_target(env, obj->vars, lcl_vars, n) = v;
@@ -358,7 +360,6 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					if (f.type != FUNC) runtime_error("operand of ? must be a function");
 #ifdef DEBUG
 					printf("running a new function!\n");
-					print_loc(env, t_i);
 					print_func(env, f.func);
 					print_stack(stack);
 #endif
