@@ -11,6 +11,7 @@ Things I'm happy with:
 
 Things the interpreter doesn't do so well:
 - Recursion (each function call mallocs enough memory to assign **every** name a value)
+- Speed in general. This language could probably be transpiled to C and compiled, but that sounds difficult for now
 
 What I'm working on:
 [] Implementing the rest of the standard Glass library (only A and O done so far)
