@@ -253,28 +253,16 @@ object_t* init_object(glass_env* env, int class_i, v_list* stack) {
 val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n) {
 	// given a name n, determine scope and return a pointer to the appropriate val to reference
 	// TODO: this fails when looking up an object name? 
-#ifdef DEBUG
-	printf("get_name_target request: %s scope ", env->names[n.name]);
-#endif
 	if (n.type != NAME) runtime_error("get_name_target: name must be name");
 	val* res;
 	switch (env->scopes[n.name]) {
 		case GLOBAL_SCOPE:
-#ifdef DEBUG
-		printf("GLOBAL_SCOPE\n");
-#endif
 		res = env->global_vars + n.name;
 		break;
 		case OBJECT_SCOPE:
-#ifdef DEBUG
-		printf("OBJECT_SCOPE\n");
-#endif
 		res = obj_vals + n.name;
 		break;
 		case FUNCTION_SCOPE:
-#ifdef DEBUG
-		printf("FUNCTION_SCOPE\n");
-#endif
 		res = locals + n.name;
 		break;
 		default:
@@ -282,6 +270,9 @@ val* get_name_target(glass_env* env, val* obj_vals, val* locals, val n) {
 		return NULL;
 	}
 #ifdef DEBUG
+	printf("get_name_target request: %s scope %s\n", 
+		env->names[n.name],
+		(char*[]) {"NO_SCOPE", "GLOBAL_SCOPE", "OBJECT_SCOPE", "FUNCTION_SCOPE"}[env->scopes[n.name]]);
 	val ref = *res;
 	if (ref.type == NO_VAL) printf("warning: no_val referenced (fine as assignment target)\n");
 #endif
@@ -301,7 +292,8 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 		break;
 		case STCK_IDX:
 			if (stack->last_i < t.data) runtime_error("duplicate call overshoots stack");
-			push(stack, stack->vs[t.data]);
+			// slightly counterintuitive, but the 0th element of the stack is at last_i
+			push(stack, stack->vs[stack->last_i - t.data]);
 		break;
 		case NUMBER:
 			push(stack, (val) {NUMB, t.data});
@@ -320,6 +312,12 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 					// assign a value to a name
 					val v = pop(stack);
 					val n = pop(stack);
+#ifdef DEBUG
+					printf("assigning to %s: ", env->names[n.name]);
+					print_val(n);
+					print_loc(env, t_i);
+					print_stack(stack);
+#endif
 					*get_name_target(env, obj->vars, lcl_vars, n) = v;
 				}
 				break;
@@ -373,7 +371,14 @@ int execute_token(glass_env* env, object_t* obj, v_list* stack, val* lcl_vars, i
 				{
 					// pop a name, push a (scope-dependent) value
 					val n = pop(stack);
+#ifdef DEBUG
+					printf("Retrieving value of %s\n", env->names[n.name]);
+#endif
 					val res = *get_name_target(env, obj->vars, lcl_vars, n);
+#ifdef DEBUG
+					printf("    got ");
+					print_val(res);
+#endif
 					// check that res has an assigned value
 					if (res.type == NO_VAL) runtime_error("variable undefined in the current scope");
 					push(stack, res);
