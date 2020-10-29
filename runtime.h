@@ -23,6 +23,7 @@ void print_func(glass_env* env, func_t f);
 void print_loc(glass_env* env, int t_i);
 
 void execute_A_function(int func_i, v_list* stack);
+void execute_S_function(int func_i, v_list* stack);
 void execute_O_function(glass_env* env, int func_i, v_list* stack);
 void execute_std_function(glass_env* env, func_t func, v_list* stack);
 
@@ -171,6 +172,112 @@ void execute_A_function(int func_i, v_list* stack) {
 	}
 }
 
+void execute_S_function(int func_i, v_list* stack) {
+	// execute a function of class S, with func_i indexing into the canonical function ordering
+	// std_S_funcs[] = {"l", "i", "si", "a", "d", "e", "ns", "sn", NULL};
+	val x, y, z;
+	// TODO this is all leaky and will need a garbage collector to fix properly
+	switch (func_i) {
+		case 0:
+		{
+			// string length
+			x = pop(stack);
+			if (x.type != STNG) runtime_error("string length operand must be string");
+			push(stack, (val) {NUMB, .numb=(int) strlen(x.stng)});
+		}
+		break;
+		case 1:
+		{
+			// index into string, push single-character string
+			y = pop(stack);
+			x = pop(stack);
+			if ((x.type != STNG) || (y.type != NUMB)) runtime_error("string index operands must be string and number");
+			char* res = (char*) malloc(2 * sizeof (char));
+			res[0] = x.stng[y.numb];
+			res[1] = '\0';
+			push(stack, (val) {STNG, .stng=(char*) res});
+		}
+		break;
+		case 2:
+		{
+			// replace the yth character of x with z
+			z = pop(stack);
+			y = pop(stack);
+			x = pop(stack);
+			if ((x.type != STNG) || (y.type != NUMB) || (z.type != STNG)) runtime_error("character replace operands must be string, number, string");
+			if (strlen(x.stng) <= y.numb) runtime_error("character replace index overshoot");
+			char* res = (char*) malloc(strlen(x.stng) * sizeof (char));
+			strcpy(res, x.stng);
+			res[y.numb] = z.stng[0];
+			push(stack, (val) {STNG, .stng=(char*) res});
+		}
+		break;
+		case 3:
+		{
+			// concatenate strings
+			y = pop(stack);
+			x = pop(stack);
+			if ((x.type != STNG) || (y.type != STNG)) runtime_error("string concat operands must be string and string");
+			char* res = (char*) malloc((strlen(x.stng) + strlen(y.stng) + 1) * sizeof (char));
+			strcpy(res, x.stng);
+			strcat(res, y.stng);
+			// strcat should write an appropriate null-terminator
+			push(stack, (val) {STNG, .stng=(char*) res});
+		}
+		break;
+		case 4:
+		{
+			// divide string x at y
+			y = pop(stack);
+			x = pop(stack);
+			if ((x.type != STNG) || (y.type != NUMB)) runtime_error("string split must be string and number");
+			int total_len = strlen(x.stng);
+			int len_a = y.numb;
+			int len_b = total_len - y.numb;
+			char* res_a = (char*) malloc((len_a + 2) * sizeof (char));
+			char* res_b = (char*) malloc((len_b + 2) * sizeof (char));
+			strncpy(res_a, x.stng, y.numb);
+			strcpy(res_b, x.stng + y.numb); // copy everything after the split
+			push(stack, (val) {STNG, .stng=(char*) res_a});
+			push(stack, (val) {STNG, .stng=(char*) res_b});
+		}
+		break;
+		case 5:
+		{
+			// string equality
+			y = pop(stack);
+			x = pop(stack);
+			if ((x.type != STNG) || (y.type != STNG)) runtime_error("string equality operands must be string and string");
+			if (!strcmp(x.stng, y.stng)) push(stack, (val) {NUMB, (int) 1});
+			else push(stack, (val) {NUMB, .numb=(int) 0});
+		}
+		break;
+		case 6:
+		{
+			// number to character
+			x = pop(stack);
+			if (x.type != NUMB) runtime_error("number to character operand must be number");
+			if((x.numb < 0)||(x.numb > 255)) runtime_error("0 < x < 256 for number to character");
+			char* res = (char*) malloc(2 * sizeof(char));
+			res[0] = (char) x.numb;
+			res[1] = '\0';
+			push(stack, (val) {STNG, .stng=(char*) res});
+		}
+		break;
+		case 7:
+		{
+			// character to number
+			x = pop(stack);
+			if (x.type != STNG) runtime_error("character to number operand must be number");
+
+			push(stack, (val) {NUMB, .numb=(int) x.stng[0]});
+		}
+		break;
+		default:
+		runtime_error("execute_S_function: bad func_i");
+	}
+}
+
 void execute_O_function(glass_env* env, int func_i, v_list* stack) {
 	// execute a function of class O, with func_i indexing into the canonical function ordering
 	// {"o", "on", NULL};
@@ -181,7 +288,7 @@ void execute_O_function(glass_env* env, int func_i, v_list* stack) {
 				printf("%s\n", env->names[x.name]);
 			}
 			else if (x.type == STNG) {
-				printf("%s\n", x.stng);
+				printf("%s", x.stng);
 			}
 			else runtime_error("output operand must be string or name");
 		break;
@@ -209,7 +316,7 @@ void execute_std_function(glass_env* env, func_t func, v_list* stack) {
 			execute_A_function(func.func_i, stack);
 		break;
 		case 1:
-			runtime_error("S class not yet supported");
+			execute_S_function(func.func_i, stack);
 		break;
 		case 2:
 			runtime_error("V class not yet supported");
